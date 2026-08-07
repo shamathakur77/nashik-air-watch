@@ -21,4 +21,5 @@ jobs:
           git config user.email "bot@users.noreply.github.com"
           git add -A
           git commit -m "Daily AQI report" || echo "no changes"
+          git pull --rebase origin main
           git push
