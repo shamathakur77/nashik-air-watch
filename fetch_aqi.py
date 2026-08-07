@@ -1,36 +1,57 @@
-import json, os, time, urllib.request
+import json, os, time, urllib.request, urllib.parse
 from datetime import datetime, timezone, timedelta
 
 RESOURCE = "3b01bcb8-0b14-4abf-b6f2-c1bfd384ba69"
 KEY = os.environ.get("DATA_GOV_KEY", "579b464db66ec23bdd000001cdd3946e44ce4aad7209ff7b23ac571b")
 FOCUS_CITIES = ["Nashik", "Pune"]
-WHO_LIMITS = {"PM2.5": 15, "PM10": 45}  # WHO 24h guideline, ug/m3
+WHO_LIMITS = {"PM2.5": 15, "PM10": 45}
 
-def fetch(filter_field, filter_value, limit=100):
-    url = (f"https://api.data.gov.in/resource/{RESOURCE}"
-           f"?api-key={KEY}&format=json&limit={limit}"
-           f"&filters[{filter_field}]={urllib.parse.quote(filter_value)}")
-    for attempt in range(4):
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "api-key": KEY})
-            with urllib.request.urlopen(req, timeout=120) as r:
-                return json.load(r).get("records", [])
-        except urllib.error.HTTPError as e:
-            print(f"{filter_value} attempt {attempt+1}: HTTP {e.code} - {e.read()[:200]}")
-        except Exception as e:
-            print(f"{filter_value} attempt {attempt+1}: {e}")
-        time.sleep(20)
+BASE = f"https://api.data.gov.in/resource/{RESOURCE}"
+
+def try_url(url, headers):
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=120) as r:
+            data = json.load(r)
+            return data.get("records", [])
+    except urllib.error.HTTPError as e:
+        print(f"  -> HTTP {e.code}: {e.read()[:120]}")
+    except Exception as e:
+        print(f"  -> {e}")
+    return None
+
+def fetch(field, value, limit=10):
+    v = urllib.parse.quote(value)
+    formats = [
+        ("encoded brackets, key in query",
+         f"{BASE}?api-key={KEY}&format=json&limit={limit}&filters%5B{field}%5D={v}",
+         {"User-Agent": "Mozilla/5.0"}),
+        ("plain brackets, key in query",
+         f"{BASE}?api-key={KEY}&format=json&limit={limit}&filters[{field}]={v}",
+         {"User-Agent": "Mozilla/5.0"}),
+        ("no filter, key in query",
+         f"{BASE}?api-key={KEY}&format=json&limit=500",
+         {"User-Agent": "Mozilla/5.0"}),
+    ]
+    for name, url, hdrs in formats:
+        print(f"{value}: trying [{name}]")
+        recs = try_url(url, hdrs)
+        if recs:
+            print(f"  -> SUCCESS with [{name}], {len(recs)} records")
+            if name.startswith("no filter"):
+                recs = [r for r in recs if r.get("city", "").lower() == value.lower()] or recs
+            return recs
+        time.sleep(10)
     return []
 
-import urllib.parse
-
 records = []
+seen_all = None
 for c in FOCUS_CITIES:
-    records += fetch("city", c)
+    recs = fetch("city", c)
+    records += recs
 
-# Maharashtra-wide ranking (best effort; skip silently if the key won't allow it)
-state_records = fetch("state", "Maharashtra", limit=500)
-records += state_records
+state_recs = fetch("state", "Maharashtra", limit=500)
+records += state_recs
 
 if not records:
     print("No data at all today; exiting gracefully.")
@@ -52,7 +73,6 @@ report = {c: {p: round(sum(v)/len(v), 1) for p, v in pols.items()} for c, pols i
 
 ist = timezone(timedelta(hours=5, minutes=30))
 today = datetime.now(ist).strftime("%Y-%m-%d")
-
 ranking = sorted(((c, d["PM2.5"]) for c, d in report.items() if "PM2.5" in d), key=lambda x: -x[1])
 
 lines = [f"# Air Report - {today}", ""]
