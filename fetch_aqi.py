@@ -1,4 +1,4 @@
-import json, os, urllib.request, urllib.parse
+import json, os, time, urllib.request
 from datetime import datetime, timezone, timedelta
 
 RESOURCE = "3b01bcb8-0b14-4abf-b6f2-c1bfd384ba69"
@@ -7,10 +7,23 @@ FOCUS_CITIES = ["Nashik", "Pune"]
 WHO_LIMITS = {"PM2.5": 15, "PM10": 45}  # WHO 24h guideline, ug/m3
 
 url = (f"https://api.data.gov.in/resource/{RESOURCE}?api-key={KEY}"
-       f"&format=json&limit=2000&filters%5Bstate%5D=Maharashtra")
+       f"&format=json&limit=1000&filters%5Bstate%5D=Maharashtra")
 
-with urllib.request.urlopen(url, timeout=60) as r:
-    records = json.load(r).get("records", [])
+records = []
+for attempt in range(5):
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=180) as r:
+            records = json.load(r).get("records", [])
+        if records:
+            break
+    except Exception as e:
+        print(f"Attempt {attempt + 1} failed: {e}")
+        time.sleep(30)
+
+if not records:
+    print("No data received after 5 attempts; skipping today.")
+    raise SystemExit(0)
 
 cities = {}
 for rec in records:
