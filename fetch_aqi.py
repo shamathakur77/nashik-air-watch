@@ -12,7 +12,7 @@ def fetch(filter_field, filter_value, limit=100):
            f"&filters[{filter_field}]={urllib.parse.quote(filter_value)}")
     for attempt in range(4):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "api-key": KEY})
             with urllib.request.urlopen(req, timeout=120) as r:
                 return json.load(r).get("records", [])
         except urllib.error.HTTPError as e:
